@@ -1,0 +1,94 @@
+# ============================================================
+#  主配置文件：注册可行性筛选工具
+# ============================================================
+
+# 业务检测模板（按行业拆分，便于独立维护）
+profiles:
+  - include: profiles/通用.yaml
+  - include: profiles/电商.yaml
+  - include: profiles/投稿.yaml
+  - include: profiles/供应商.yaml
+  - include: profiles/统一登录.yaml
+  - include: profiles/后台站点.yaml
+  - include: profiles/图书馆系统.yaml
+  - include: profiles/校园邮箱.yaml
+  - include: profiles/CMS系统.yaml
+  - include: profiles/门户站.yaml
+
+# 全局排除规则（扣分）
+exclusions:
+  - include: exclusions/通用排除.yaml
+
+# 黑名单规则（命中直接 pass，不进入评分，比排除规则更严格）
+# 分两层：
+#   url_blacklist: 纯文本匹配 URL，不发送 HTTP 请求，最快
+#   content_blacklist: 匹配页面内容，需要发一次请求
+blacklist:
+  url_blacklist:
+    # 命中这些关键词的 URL 直接跳过，不发请求
+    - 404
+    - error
+    - not-found
+    - parked
+    - domain-for-sale
+    - expired
+    - 域名停放
+    - /error/
+    - /404/
+    - /not-found/
+    - test.
+    - demo.
+    - staging.
+    - dev.
+  content_blacklist:
+    # 页面内容命中这些关键词的，跳过评分
+    - 网站维护中
+    - 页面正在升级
+    - 系统升级维护
+    - 暂不开放注册
+    - 注册功能已关闭
+    - 仅限内部访问
+    - access denied
+    - forbidden
+    - 门户网站
+    - 门户
+    - 网站首页
+    - 校园门户
+    - 校园网首页
+    - 官方首页
+    - 信息门户
+    - 网站维护
+    - 系统维护中
+    - 升级维护中
+    # 默认页面特征（命中说明站点未部署业务，是裸服务器）
+    - Welcome to nginx!
+    - Welcome to IIS
+    - Internet Information Services
+    - It works!
+    - Apache2 Ubuntu Default Page
+    - Apache Tomcat
+    - If you're seeing this
+
+# 评分系统配置
+scoring:
+  threshold: 60          # 高于此分视为可注册候选
+  mode: accumulate       # accumulate = 累加所有命中权重
+
+# 输出配置
+output:
+  min_score: 30          # 低于此分的直接过滤掉，不输出
+  auto_highlight: 80     # 高于此分的标为高价值
+  formats:
+    - terminal
+    - json
+    - csv
+
+# HTTP 探测配置
+probe:
+  concurrency: 150       # 全局并发数
+  timeout: 8             # 单请求超时（秒）
+  follow_redirects: true
+
+# SPA 检测配置
+spa:
+  enabled: true          # 是否标记疑似 SPA（不在此阶段渲染）

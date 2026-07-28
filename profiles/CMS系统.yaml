@@ -1,0 +1,52 @@
+# CMS/博客/内容展示系统检测：识别各类内容管理平台
+# 这类站点通常无开放注册，命中后扣分
+- name: CMS系统检测
+  weight: -3
+  threshold: 2
+  category: CMS系统
+  checks:
+    - type: body_keyword
+      weight: -1
+      indicators:
+        - WordPress
+        - Drupal
+        - Joomla
+        - 博客
+        - 个人博客
+        - 博客系统
+        - 内容管理系统
+        - CMS
+        - 文章管理
+        - 新闻发布
+        - 新闻系统
+        - 内容发布
+        - 站内新闻
+        - 学校新闻
+        - 新闻动态
+        - 通知公告
+        - 公告栏
+        - 信息发布
+
+    - type: title_keyword
+      weight: -1
+      indicators:
+        - 新闻
+        - 公告
+        - 博客
+        - CMS
+        - WordPress
+
+    - type: path
+      weight: -1
+      indicators:
+        - /news/
+        - /article/
+        - /blog/
+        - /posts/
+        - /wp-content/
+        - /wp-admin/
+        - /joomla/
+        - /drupal/
+        - /information/
+        - /notice/
+        - /announcement/

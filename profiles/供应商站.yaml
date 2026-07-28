@@ -1,0 +1,32 @@
+# 供应商/B2B 业务检测
+- name: 供应商业务检测
+  weight: 20
+  threshold: 2
+  category: 供应商站点
+  checks:
+    - type: business_type
+      weight: 15
+      category: supplier
+      indicators:
+        - supplier
+        - vendor
+        - procurement
+        - purchase order
+        - wholesale
+        - supply chain
+        - B2B
+        - 供应商
+        - 采购
+        - 批发
+        - 招投标
+        - 供应链
+
+    - type: body_keyword
+      weight: 8
+      indicators:
+        - 供应商管理
+        - 采购管理
+        - 货源
+        - 供应链金融
+        - 企业采购
+        - 供应商入驻

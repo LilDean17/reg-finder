@@ -1,0 +1,64 @@
+# 通用业务检测：注册/登录/表单相关关键词
+- name: 通用业务检测
+  weight: 15
+  threshold: 2
+  category: 通用
+  checks:
+    - type: body_keyword
+      weight: 12
+      indicators:
+        - register
+        - signup
+        - sign up
+        - create account
+        - login
+        - signin
+        - sign in
+        - forgot password
+        - reset password
+        - 平台
+        - 注册
+        - 登录
+        - 找回密码
+        - 忘记密码
+        # SPA 渲染后中文可能被插入字间距，补充带空格变体
+        - 登 录
+        - 注 册
+        - 找回 密码
+        - 忘记 密码
+        - 登陆
+        - 登 陆
+
+    - type: body_keyword
+      weight: -10
+      indicators:
+        - vpn
+        - VPN
+
+    - type: path
+      weight: 6
+      indicators:
+        - /register
+        - /signup
+        - /login
+        - /signin
+        - /auth
+        - /account
+        - /admin
+        - /user
+
+    - type: title_keyword
+      weight: 10
+      indicators:
+        - 登录
+        - 注册
+        - login
+        - sign in
+        - sign up
+
+    - type: register_form
+      weight: 15
+      input_types:
+        - email
+        - password
+        - text

@@ -1,0 +1,42 @@
+# 统一登录 / SSO 检测：识别单点登录、统一认证平台
+# 这类站点通常无开放注册，命中后重扣分
+- name: 统一登录检测
+  weight: -15
+  threshold: 2
+  category: 统一登录
+  checks:
+    - type: body_keyword
+      weight: -10
+      indicators:
+        - 统一登录
+        - 单点登录
+        - 统一认证
+        - 统一身份认证
+        - 统一身份
+        - SSO
+        - CAS
+        - OAuth
+        - 身份认证
+        - 认证中心
+        - 门户登录
+        - 统一入口
+        - 单点登入
+
+    - type: title_keyword
+      weight: -10
+      indicators:
+        - 统一登录
+        - 单点登录
+        - 统一认证
+        - 统一身份认证
+        - SSO
+        - 登录认证
+
+    - type: path
+      weight: -3
+      indicators:
+        - /sso/
+        - /cas/
+        - /oauth/
+        - /login/
+        - /auth/

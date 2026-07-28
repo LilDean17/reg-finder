@@ -1,0 +1,37 @@
+# 电商业务检测
+- name: 电商业务检测
+  weight: 15
+  threshold: 2
+  category: 电商站
+  checks:
+    - type: business_type
+      weight: 15
+      category: ecommerce
+      indicators:
+        - 购物车
+        - 结算
+        - 下单
+        - 商品
+        - 订单
+        - 运费
+        - 优惠券
+        - 支付
+        - 退货
+        - add to cart
+        - checkout
+        - shipping
+        - billing
+        - product
+        - wishlist
+        - 加入购物车
+
+    - type: body_keyword
+      weight: 6
+      indicators:
+        - 购物
+        - 商城
+        - 商店
+        - 在线购买
+        - 立即购买
+        - 加入购物车
+        - 正品保障

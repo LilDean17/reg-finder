@@ -1,0 +1,33 @@
+# 投稿/内容平台业务检测
+- name: 投稿业务检测
+  weight: 8
+  threshold: 2
+  category: 学术投稿
+  checks:
+    - type: business_type
+      weight: 8
+      category: submission
+      indicators:
+        - 投稿
+        - 作者
+        - 审稿
+        - 编辑部
+        - submit article
+        - become an author
+        - contribute
+        - 发布文章
+        - 撰稿
+        - 稿件
+        - 期刊
+        - 学报
+
+    - type: body_keyword
+      weight: 8
+      indicators:
+        - 发表文章
+        - 成为作者
+        - 在线投稿
+        - 学术论文
+        - 稿件投递
+        - editor
+        - editorial

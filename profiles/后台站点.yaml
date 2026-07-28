@@ -1,0 +1,52 @@
+# 后台站点检测：识别各类管理后台、管理平台
+- name: 后台站点检测
+  weight: 8                     # ← 基础分 8
+  threshold: 2
+  category: 后台站点
+  checks:
+    - type: body_keyword
+      weight: 0                 # ← 每个 indicator 命中 +3
+      indicators:
+        - 管理后台
+        - 管理系统
+        - 后台管理
+        - 管理平台
+        - 管理端
+        - 后台登录
+        - 管理员登录
+        - 后台首页
+        - 控制台
+        - dashboard
+        - 运维平台
+        - 运维管理
+        - 运营管理
+        - 运营后台
+        - 后台
+        - 登录
+        - 登 录
+
+    - type: title_keyword
+      weight: 0
+      indicators:
+        - 后台管理
+        - 管理后台
+        - 管理系统
+        - 管理平台
+        - 控制台
+        - dashboard
+
+    - type: path
+      weight: 0
+      indicators:
+        - /admin/
+        - /manage/
+        - /manager/
+        - /console/
+        - /dashboard/
+        - /backend/
+        - /system/
+        - /ops/
+        - /operation/
+        - /manage/login
+        - /admin/login
+        - /console/login

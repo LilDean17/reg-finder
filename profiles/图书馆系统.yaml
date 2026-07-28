@@ -1,0 +1,44 @@
+# 图书馆系统检测：识别校园图书馆检索、借阅管理平台
+- name: 图书馆系统检测
+  weight: -10
+  threshold: 3
+  category: 图书馆系统
+  checks:
+    - type: body_keyword
+      weight: -3
+      indicators:
+        - 图书馆
+        - 馆藏检索
+        - 书目检索
+        - 借阅
+        - 图书检索
+        - OPAC
+        - 馆藏查询
+        - 超星
+        - 读秀
+        - 中国知网
+        - 电子资源
+        - 文献检索
+        - library
+        - 在线借阅
+        - 图书馆首页
+
+    - type: title_keyword
+      weight: -3
+      indicators:
+        - 图书馆
+        - 馆藏
+        - 图书检索
+        - OPAC
+        - library
+
+    - type: path
+      weight: -3
+      indicators:
+        - /lib/
+        - /library/
+        - /opac/
+        - /book/
+        - /search/book
+        - /lib-opac
+        - /tsg/

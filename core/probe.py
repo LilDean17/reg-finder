@@ -1,0 +1,284 @@
+#!/usr/bin/env python3
+"""HTTP 探测模块：对 URL 发请求，提取页面特征。支持 SPA 渲染。"""
+import httpx
+import re
+import asyncio
+import warnings
+from bs4 import BeautifulSoup
+from dataclasses import dataclass, field
+from typing import List, Optional, Dict
+
+warnings.filterwarnings("ignore", category=UserWarning)
+
+
+@dataclass
+class ProbeResult:
+    url: str
+    final_url: str
+    status_code: int
+    title: str = ""
+    body_text: str = ""
+    body_lower: str = ""
+    forms_detected: List[dict] = field(default_factory=list)
+    has_register_form: bool = False
+    is_spa: bool = False
+    rendered: bool = False          # 是否经过了渲染
+    error: str = ""
+
+
+class Prober:
+    def __init__(self, concurrency: int = 50, timeout: int = 10, follow_redirects: bool = True,
+                 per_domain_limit: int = 10):
+        self.concurrency = concurrency
+        self.timeout = timeout
+        self.follow_redirects = follow_redirects
+        self.per_domain_limit = per_domain_limit
+        self._domain_semaphores: Dict[str, asyncio.Semaphore] = {}
+        self._playwright_available = None  # 懒检测
+
+    async def _get_playwright(self):
+        """懒检测 Playwright 是否可用"""
+        if self._playwright_available is None:
+            try:
+                from playwright.async_api import async_playwright
+                # 测试是否能正常启动
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(headless=True)
+                    await browser.close()
+                self._playwright_available = True
+            except ImportError:
+                self._playwright_available = False
+            except Exception:
+                self._playwright_available = False
+        return self._playwright_available
+
+    async def probe(self, url: str) -> ProbeResult:
+        """
+        探测单个 URL：
+          1. 先发一次 HTTP 请求，拿到原始 HTML
+          2. 判断是否为 SPA
+          3. 如果是 SPA 且有 Playwright → 渲染后拿 HTML
+          4. 从最终 HTML（原始或渲染后的）提取特征
+        """
+        # 域名级并发限制：同一个域名最多 per_domain_limit 个并发请求
+        try:
+            domain = url.split("//")[1].split("/")[0]
+        except (IndexError, AttributeError):
+            domain = "default"
+
+        if domain not in self._domain_semaphores:
+            self._domain_semaphores[domain] = asyncio.Semaphore(self.per_domain_limit)
+
+        async with self._domain_semaphores[domain]:
+            return await self._do_probe(url)
+
+    async def _do_probe(self, url: str) -> ProbeResult:
+        """实际探测逻辑，由 probe() 调用并加上域名级并发限制"""
+        try:
+            async with httpx.AsyncClient(
+                follow_redirects=self.follow_redirects,
+                timeout=self.timeout,
+                headers={
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+                    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+                },
+                verify=False,
+            ) as client:
+                resp = await client.get(url)
+                raw_html = resp.text
+
+            # 第二步：判断是否为 SPA
+            is_spa = self._detect_spa(raw_html)
+
+            # 第三步：如果是 SPA，尝试渲染
+            html_to_parse = raw_html
+            rendered = False
+            if is_spa:
+                rendered_html = await self._render_spa(url)
+                if rendered_html:
+                    html_to_parse = rendered_html
+                    rendered = True
+
+            # 第四步：从 HTML 提取特征（无论原始还是渲染后的）
+            return self._extract_features(url, str(resp.url), resp.status_code, html_to_parse, is_spa, rendered)
+
+        except httpx.TimeoutException:
+            return ProbeResult(url=url, final_url=url, status_code=0, error="timeout")
+        except httpx.HTTPError as e:
+            return ProbeResult(url=url, final_url=url, status_code=0, error=str(e)[:100])
+        except Exception as e:
+            return ProbeResult(url=url, final_url=url, status_code=0, error=str(e)[:100])
+
+    async def _render_spa(self, url: str) -> Optional[str]:
+        """用 Playwright 渲染 SPA 页面，返回渲染后的 HTML"""
+        try:
+            pw = await self._get_playwright()
+            if not pw:
+                return None
+
+            from playwright.async_api import async_playwright
+
+            async with async_playwright() as p:
+                browser = await p.chromium.launch(
+                    headless=True,
+                    args=[
+                        "--no-sandbox",
+                        "--disable-blink-features=AutomationControlled",
+                        "--disable-dev-shm-usage",
+                    ],
+                )
+                context = await browser.new_context(
+                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+                    viewport={"width": 1920, "height": 1080},
+                    locale="zh-CN",
+                )
+                page = await context.new_page()
+
+                # 注入脚本隐藏 webdriver 标记，绕过无头浏览器检测
+                await page.add_init_script("""
+                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                    window.chrome = { runtime: {} };
+                    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                    Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
+                """)
+
+                await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                await page.wait_for_timeout(3000)  # 等 JS 执行完
+
+                html = await page.content()
+                await browser.close()
+                return html
+
+        except Exception:
+            return None
+
+    def _detect_spa(self, html: str) -> bool:
+        """检测是否为 SPA 或 JS 重定向页（需要渲染才能获取真实内容）"""
+        body_match = re.search(r'<body[^>]*>(.*?)</body>', html, re.DOTALL | re.IGNORECASE)
+        if not body_match:
+            return False
+
+        body_content = body_match.group(1)
+        clean = re.sub(
+            r'<(script|link|style|noscript)[^>]*>.*?</\1>',
+            '', body_content, flags=re.DOTALL | re.IGNORECASE
+        )
+        clean = re.sub(r'<[^>]+>', '', clean).strip()
+
+        # 信号1：实际内容极少（< 300 字符）
+        content_is_empty = len(clean) < 300
+        # 信号1.5：内容完全为空（0 字符），说明所有内容都是 JS 渲染的，直接判定为 SPA
+        content_is_completely_empty = len(clean) == 0
+
+        # 信号2：有 SPA 框架 JS 文件
+        spa_js_patterns = [
+            r'main\.\w+\.js',
+            r'chunk-vendors',
+            r'chunk\.\w+\.js',
+            r'_next/static',
+            r'_nuxt/',
+            r'nuxt\.',
+            r'createRoot\s*\(',
+            r'createApp\s*\(',
+            r'ngDoBootstrap',
+            # Vue.js / Element UI 特征
+            r'element-ui',
+            r'element-ui\.css',
+            r'new\s+Vue\s*\(',
+            r'Vue\.component\s*\(',
+            r'Vue\.use\s*\(',
+            r'el-table',
+            r'el-form',
+            r'el-button',
+            r'el-input',
+        ]
+        has_spa_js = any(re.search(p, html, re.IGNORECASE) for p in spa_js_patterns)
+
+        # 信号3：有根容器 div（空壳页面特征）
+        has_root_div = bool(re.search(
+            r'<div\s+id=["\'](app|root|app-root|app-container)["\']\s*>\s*(?:</div>)?',
+            html, re.IGNORECASE
+        ))
+
+        # 信号4：JS 重定向（页面靠 JS 跳转，不是真实内容）
+        has_js_redirect = bool(re.search(
+            r'window\.location\.(href|replace)\s*=|location\.href\s*=',
+            html, re.IGNORECASE
+        ))
+
+        signals = sum([content_is_empty, has_spa_js, has_root_div, has_js_redirect])
+        # 内容完全为空时，直接判定为 SPA（不需要凑够 2 个信号）
+        if content_is_completely_empty:
+            return True
+        return signals >= 2
+
+    def _extract_features(self, url, final_url, status_code, html, is_spa, rendered) -> ProbeResult:
+        """从 HTML 提取所有特征，返回 ProbeResult"""
+        soup = BeautifulSoup(html, "html.parser")
+
+        # 标题
+        title = ""
+        if soup.title and soup.title.string:
+            title = soup.title.string.strip()
+
+        # 纯文本
+        body_text = soup.get_text(separator=" ", strip=True)
+        body_lower = body_text.lower()
+
+        # 表单
+        forms_detected = self._extract_forms(soup)
+        has_register_form = self._has_register_form(forms_detected, body_lower)
+
+        return ProbeResult(
+            url=url,
+            final_url=final_url,
+            status_code=status_code,
+            title=title,
+            body_text=body_text,
+            body_lower=body_lower,
+            forms_detected=forms_detected,
+            has_register_form=has_register_form,
+            is_spa=is_spa,
+            rendered=rendered,
+        )
+
+    def _extract_forms(self, soup) -> List[dict]:
+        """提取页面中的所有表单及其特征"""
+        forms = []
+        for form in soup.find_all("form"):
+            inputs = form.find_all("input")
+            input_types = [i.get("type", "text").lower() for i in inputs]
+            input_names = [i.get("name", "").lower() for i in inputs]
+            action = form.get("action", "").lower()
+            form_text = form.get_text(separator=" ", strip=True).lower()
+
+            forms.append({
+                "input_types": input_types,
+                "input_names": input_names,
+                "action": action,
+                "text": form_text,
+            })
+        return forms
+
+    def _has_register_form(self, forms: List[dict], body_lower: str) -> bool:
+        """判断页面是否存在注册表单"""
+        for form in forms:
+            has_email = any(
+                t == "email" or "email" in n
+                for t, n in zip(form["input_types"], form["input_names"])
+            )
+            has_password = "password" in form["input_types"]
+            if has_email and has_password:
+                return True
+
+            register_words = ["register", "signup", "sign-up", "create account", "注册"]
+            if any(w in form["text"] or w in form["action"] for w in register_words):
+                return True
+
+        if any("password" in f["input_types"] for f in forms):
+            register_words = ["register", "signup", "sign up", "create account", "注册账号", "新用户"]
+            if any(w in body_lower for w in register_words):
+                return True
+
+        return False
