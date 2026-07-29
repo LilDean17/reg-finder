@@ -1,7 +1,7 @@
 # 全局排除规则：命中则扣分
 
 - type: domain_keyword
-  weight: -30
+  weight: -40
   indicators:
     - mail
     - staging

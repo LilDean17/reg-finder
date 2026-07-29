@@ -1,11 +1,11 @@
 # 门户站检测：命中后扣分，压制误判为可注册站点
 - name: 门户站检测
-  weight: -20
+  weight: -13
   threshold: 3
   category: 门户站点
   checks:
     - type: body_keyword
-      weight: -5
+      weight: -8
       indicators:
         - 门户网站
         - 门户
@@ -17,7 +17,25 @@
         - 校园网首页
         - 校园导航
         - 校园一站
+        - 校园文化
+        - 校友风采
+        - 师资队伍
+        - 专业介绍
         - 信息门户
+        - 科研动态
+        - 交流合作
+        - 师资力量
+        - 单位简介
+        - 学校主页
+        - 中心概况
+        - 年度报告
+        - 教学案例
+        - 规章制度
+        - 工作要闻
+        - 领导讲话
+        - 文件通知
+        - 学院动态
+        - 学院新闻
         # 组织机构类门户
         - 团委
         - 学院
@@ -51,7 +69,12 @@
         - 网站地图
         - 团委
         - 部门
-
+        
+    - type: body_keyword
+      weight: -5
+      indicators:
+        - 通知公告
+    
     - type: path
       weight: 0
       indicators:
@@ -59,3 +82,4 @@
         - /portal
         - /home/
         - /index.html
+        - /page.htm

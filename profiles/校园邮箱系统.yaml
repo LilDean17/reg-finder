@@ -1,7 +1,7 @@
 # 校园邮箱/Webmail 检测：识别高校邮件系统
 # 这类站点通常无开放注册，命中后扣分
 - name: 校园邮箱检测
-  weight: -10
+  weight: -20
   threshold: 2
   category: 校园邮箱
   checks:
