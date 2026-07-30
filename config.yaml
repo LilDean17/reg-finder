@@ -5,7 +5,7 @@
 # 业务检测模板（按行业拆分，便于独立维护）
 profiles:
   - include: profiles/通用.yaml
-  - include: profiles/电商.yaml
+  - include: profiles/电商站.yaml
   - include: profiles/投稿.yaml
   - include: profiles/供应商.yaml
   - include: profiles/统一登录.yaml
@@ -61,9 +61,6 @@ blacklist:
     - 仅限内部访问
     - access denied
     - forbidden
-    - 门户网站
-    - 门户
-    - 网站首页
     - 校园门户
     - 校园网首页
     - 官方首页

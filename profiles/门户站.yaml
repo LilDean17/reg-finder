@@ -64,16 +64,40 @@
         - 机构设置
         - 学校概况
         - 校园风光
-        - 联系我们
         - 友情链接
         - 网站地图
         - 团委
         - 部门
+        # 企业门户
+        - 社会责任
+        - 服务与支持
+        - 服务热线
+        - 关注我们
+        - 更多新闻
         
     - type: body_keyword
       weight: -5
       indicators:
         - 通知公告
+        - 了解更多
+        - 联系我们
+        - 关于我们
+        - 新闻中心
+        - 最新资讯
+        # 英文企业门户（多词组合，避免单单词误伤）
+        - About us
+        - Contact us
+        - Investor relations
+        - Investor Relations
+        - Our management team
+        - Our vision
+        - Our mission
+        - ESG reports
+        - Financial reports
+        - Media resources
+        - Corporate governance
+        - What we create
+        - Who we are
     
     - type: path
       weight: 0

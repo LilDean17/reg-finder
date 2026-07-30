@@ -57,7 +57,7 @@ pip install -r requirements.txt
 
 | 库 | 用途 |
 |---|---|
-| httpx | 异步 HTTP 请求 |
+| curl_cffi | 异步 HTTP 请求（模拟 Chrome TLS 指纹，绕过 CDN 拦截） |
 | beautifulsoup4 | HTML 解析 |
 | lxml | HTML 解析器 |
 | pyyaml | YAML 配置加载 |

@@ -179,6 +179,22 @@ class Scanner:
                     self._jsonl_file.flush()
                     return None
 
+            # CDN/WAF 挑战页 — 输出记录并跳过评分
+            if probe_result.error and "CDN" in probe_result.error:
+                async with lock:
+                    error_count += 1
+                    processed += 1
+                cdn_result = self._make_blocked_result(
+                    url, probe_result.final_url, probe_result.status_code,
+                    probe_result.title, probe_result.error
+                )
+                self._print_result_line(cdn_result, processed, total)
+                self._write_csv_row(cdn_result)
+                self._csv_file.flush()
+                self._write_jsonl_row(cdn_result)
+                self._jsonl_file.flush()
+                return None
+
             # 请求失败（timeout / 网络错误等）— 也输出记录
             if probe_result.status_code == 0:
                 async with lock:

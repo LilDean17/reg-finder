@@ -4,7 +4,7 @@
   threshold: 2
   category: 电商站
   checks:
-    - type: business_type
+    - type: body_keyword
       weight: 15
       category: ecommerce
       indicators:
