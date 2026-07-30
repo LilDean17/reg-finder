@@ -40,13 +40,13 @@ class OutputFormatter:
         url_width = max(len(r.final_url) for r in results)
         url_width = min(url_width, 55)
 
-        divider = "─" * (8 + url_width + 10 + 14 + 10)
+        divider = "─" * (8 + url_width + 10 + 14 + 4 + 5 + 6 + 10)
 
         print(f"\n{'═' * len(divider)}")
         print(f"  注册可行性筛选结果  (共 {len(results)} 个 / 扫描 {total_urls} 个 / 耗时 {elapsed:.1f}s)")
         print(f"{'═' * len(divider)}")
 
-        header = f"{'得分':<6} {'URL':<{url_width}} {'状态':<6} {'业务类型':<14} {'渲染':<5} {'注册表单'}"
+        header = f"{'得分':<6} {'URL':<{url_width}} {'状态':<6} {'业务类型':<14} {'SPA':<4} {'渲染':<5} {'渲染状态':<6} {'注册表单'}"
         print(header)
         print(divider)
 
@@ -55,12 +55,14 @@ class OutputFormatter:
             url_short = r.final_url[:url_width]
             biz = ",".join(r.business_types) if r.business_types else "未分类"
             biz = biz[:12]
+            spa = "是" if r.is_spa else ""
             rendered = "✓" if r.rendered else ""
+            render_status = "已渲染" if r.rendered else ("未渲染" if r.is_spa else "-")
             form = "✓" if r.has_register_form else ""
 
             print(
                 f"{score_str:<6} {url_short:<{url_width}} "
-                f"{r.status_code:<6} {biz:<14} {rendered:<5} {form}"
+                f"{r.status_code:<6} {biz:<14} {spa:<4} {rendered:<5} {render_status:<6} {form}"
             )
 
             # 输出每条命中规则
@@ -94,7 +96,7 @@ class OutputFormatter:
             writer = csv.writer(f)
             writer.writerow([
                 "得分", "URL", "最终URL", "状态码", "标题",
-                "业务类型", "SPA", "已渲染", "注册表单", "推荐等级",
+                "业务类型", "SPA", "已渲染", "渲染状态", "注册表单", "推荐等级",
                 "命中规则明细", "错误"
             ])
             for r in results:
@@ -111,6 +113,7 @@ class OutputFormatter:
                     ",".join(r.business_types) if r.business_types else "",
                     "是" if r.is_spa else "否",
                     "是" if r.rendered else "否",
+                    "已渲染" if r.rendered else ("未渲染" if r.is_spa else "-"),
                     "是" if r.has_register_form else "否",
                     r.recommendation,
                     breakdown_str,

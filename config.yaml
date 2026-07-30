@@ -27,6 +27,8 @@ blacklist:
   url_blacklist:
     # 命中这些关键词的 URL 直接跳过，不发请求
     - 404
+    - 403
+    - 500
     - error
     - not-found
     - parked
@@ -36,17 +38,26 @@ blacklist:
     - /error/
     - /404/
     - /not-found/
+    # 域名特征（排除测试/示例/邮件服务器等非业务站点）
+    - mail.
+    - example.
+    - localhost
+    # 环境标识
     - test.
     - demo.
     - staging.
     - dev.
   content_blacklist:
     # 页面内容命中这些关键词的，跳过评分
+    - 由 Tencent Cloud EdgeOne 提供防护
     - 网站维护中
     - 页面正在升级
     - 系统升级维护
     - 暂不开放注册
     - 注册功能已关闭
+    - 注册已关闭
+    - 暂停注册
+    - 注册通道关闭
     - 仅限内部访问
     - access denied
     - forbidden

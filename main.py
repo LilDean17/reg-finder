@@ -82,21 +82,39 @@ class Scanner:
         url_blacklist = self.config.blacklist.url_blacklist
         if url_blacklist:
             passed, blocked = self._filter_url_blacklist(urls, url_blacklist)
-            if blocked:
-                self._p(f"[*] URL 黑名单过滤: {len(blocked)} 个 URL 被跳过")
-                urls = passed
         else:
-            blocked = []
+            passed, blocked = urls, []
 
-        if not urls:
+        # 初始化增量输出文件（在扫描前打开，以便写入黑名单条目）
+        self._init_incremental_output()
+
+        # 将 URL 黑名单条目写入输出文件，并逐条终端输出
+        if blocked:
+            self._p(f"[*] URL 黑名单过滤: {len(blocked)} 个 URL 被跳过")
+            for bl_url in blocked:
+                # 找出命中的关键字
+                url_lower = bl_url.lower()
+                matched_kw = None
+                for kw in [str(k) for k in url_blacklist]:
+                    if kw.lower() in url_lower:
+                        matched_kw = kw
+                        break
+                self._p(f"  {Fore.CYAN}[黑名单] {bl_url}  →  {matched_kw}{Style.RESET_ALL}")
+                r = self._make_blocked_result(bl_url, bl_url, 0, "", f"URL黑名单过滤[{matched_kw}]")
+                self._write_csv_row(r)
+                self._write_jsonl_row(r)
+
+        if not passed:
             self._p("[!] 所有 URL 都被黑名单过滤，无需扫描")
+            self._csv_file.close()
+            self._jsonl_file.close()
             self._log.close()
             return []
 
-        self._p(f"[*] 加载 {len(urls)} 个 URL（原始 {len(urls) + len(blocked)} 个）")
+        self._p(f"[*] 加载 {len(passed)} 个 URL（原始 {len(passed) + len(blocked)} 个）")
 
         start_time = time.time()
-        results, content_blocked = asyncio.run(self._run_streaming(urls))
+        results, content_blocked = asyncio.run(self._run_streaming(passed))
         elapsed = time.time() - start_time
 
         total_blocked = len(blocked) + content_blocked
@@ -125,7 +143,6 @@ class Scanner:
         error_count = 0
         start_time = time.time()
 
-        self._init_incremental_output()
         self._p(f"\n{'=' * 60}")
         self._p(f"  开始扫描  共 {total} 个 URL | 并发 {concurrency} | 超时 {self.config.probe.timeout}s")
         self._p(f"{'=' * 60}\n")
@@ -138,21 +155,44 @@ class Scanner:
                 # 探测
                 probe_result = await self.prober.probe(url)
 
-            # 内容黑名单检查
+            # 内容黑名单检查 — 命中也输出记录，并显示命中的关键字
             if content_blacklist and probe_result.status_code > 0:
                 haystack = (probe_result.body_text + " " + probe_result.title).lower()
                 blacklist_str = [str(kw) for kw in content_blacklist]
-                if any(kw.lower() in haystack for kw in blacklist_str):
+                matched_kw = None
+                for kw in blacklist_str:
+                    if kw.lower() in haystack:
+                        matched_kw = kw
+                        break
+                if matched_kw:
                     async with lock:
                         content_blocked_count += 1
                         processed += 1
+                    blocked = self._make_blocked_result(
+                        url, probe_result.final_url, probe_result.status_code,
+                        probe_result.title, f"内容黑名单过滤[{matched_kw}]"
+                    )
+                    self._print_result_line(blocked, processed, total)
+                    self._write_csv_row(blocked)
+                    self._csv_file.flush()
+                    self._write_jsonl_row(blocked)
+                    self._jsonl_file.flush()
                     return None
 
-            # 请求失败
+            # 请求失败（timeout / 网络错误等）— 也输出记录
             if probe_result.status_code == 0:
                 async with lock:
                     error_count += 1
                     processed += 1
+                err_msg = probe_result.error or "请求失败"
+                err_result = self._make_blocked_result(
+                    url, url, 0, "", f"请求失败[{err_msg}]"
+                )
+                self._print_result_line(err_result, processed, total)
+                self._write_csv_row(err_result)
+                self._csv_file.flush()
+                self._write_jsonl_row(err_result)
+                self._jsonl_file.flush()
                 return None
 
             # 评分（ scorer 内部同时完成分类）
@@ -176,9 +216,7 @@ class Scanner:
                 self._csv_file.flush()
 
                 # 增量写入 JSONL
-                self._jsonl_file.write(
-                    json.dumps(self._serialize_scored(scored), ensure_ascii=False) + "\n"
-                )
+                self._write_jsonl_row(scored)
                 self._jsonl_file.flush()
 
             return scored
@@ -201,7 +239,7 @@ class Scanner:
         self._csv_writer = csv.writer(self._csv_file)
         self._csv_writer.writerow([
             "得分", "URL", "最终URL", "状态码", "标题",
-            "业务类型", "SPA", "已渲染", "注册表单", "推荐等级",
+            "业务类型", "SPA", "已渲染", "渲染状态", "注册表单", "推荐等级",
             "命中规则明细", "错误"
         ])
         self._csv_file.flush()
@@ -210,19 +248,26 @@ class Scanner:
         self._jsonl_file = open(jsonl_path, "w", encoding="utf-8")
 
     def _print_result_line(self, scored: ScoredResult, index: int, total: int):
-        """单行输出一个 URL 的结果（gobuster 风格，详情每项一行）"""
+        """单行输出一个 URL 的结果"""
         score_str = self._color_score(scored.score)
         biz_str = ",".join(scored.business_types) if scored.business_types else "未分类"
         url_str = scored.final_url if scored.final_url else scored.url
         pct = index * 100 // total
         idx_str = f"[{index}/{total}]({pct}%)"
 
-        # 第一行
-        plain_first = f"  {idx_str} {scored.score} │ {url_str} │ {biz_str}"
-        colored_first = f"  {idx_str} {score_str} │ {url_str} │ {biz_str}"
+        render_status = "已渲染" if scored.rendered else ("未渲染" if scored.is_spa else "-")
+
+        # 拦截/错误记录：青色单行输出
+        if scored.error:
+            line = f"  {idx_str} {scored.score} │ {url_str} │ {Fore.CYAN}{scored.error}{Style.RESET_ALL}"
+            self._p(line)
+            return
+
+        # 正常记录
+        colored_first = f"  {idx_str} {score_str} │ {url_str} │ {biz_str} │ {render_status}"
         self._p(colored_first)
 
-        # 详情每项一行，缩进对齐
+        # 详情每项一行
         items = []
         for d in scored.breakdown:
             if d.weight != 0:
@@ -249,11 +294,19 @@ class Scanner:
             ",".join(scored.business_types) if scored.business_types else "",
             "是" if scored.is_spa else "否",
             "是" if scored.rendered else "否",
+            "已渲染" if scored.rendered else ("未渲染" if scored.is_spa else "-"),
             "是" if scored.has_register_form else "否",
             scored.recommendation,
             breakdown_str,
             scored.error,
         ])
+
+    def _write_jsonl_row(self, scored: ScoredResult):
+        """写入一条 JSONL 记录"""
+        self._jsonl_file.write(
+            json.dumps(self._serialize_scored(scored), ensure_ascii=False) + "\n"
+        )
+        self._jsonl_file.flush()
 
     def _load_urls(self, urls_file: str) -> list:
         lines = Path(urls_file).read_text(encoding="utf-8").splitlines()
@@ -357,6 +410,24 @@ class Scanner:
             "排除": "排除",
         }
         return mapping.get(name, name[:2])
+
+    @staticmethod
+    def _make_blocked_result(url: str, final_url: str, status_code: int,
+                             title: str, error_msg: str) -> ScoredResult:
+        """为超时、黑名单等非评分结果创建统一的 ScoredResult"""
+        return ScoredResult(
+            url=url,
+            final_url=final_url,
+            status_code=status_code,
+            title=title[:80] if title else "",
+            score=0,
+            business_types=[],
+            is_spa=False,
+            rendered=False,
+            has_register_form=False,
+            recommendation="blocked" if "黑名单" in error_msg else "error",
+            error=error_msg,
+        )
 
     @staticmethod
     def _color_score(score: int) -> str:
