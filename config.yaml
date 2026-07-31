@@ -40,13 +40,8 @@ blacklist:
     - /not-found/
     # 域名特征（排除测试/示例/邮件服务器等非业务站点）
     - mail.
-    - example.
     - localhost
     # 环境标识
-    - test.
-    - demo.
-    - staging.
-    - dev.
   content_blacklist:
     # 页面内容命中这些关键词的，跳过评分
     - 由 Tencent Cloud EdgeOne 提供防护
@@ -93,7 +88,7 @@ output:
 
 # HTTP 探测配置
 probe:
-  concurrency: 150       # 全局并发数
+  concurrency: 30        # 全局并发数（curl_cffi 连接池）。过高会导致内存飙升，建议 20~50
   timeout: 8             # 单请求超时（秒）
   follow_redirects: true
 

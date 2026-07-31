@@ -35,7 +35,10 @@ class Prober:
         self.per_domain_limit = per_domain_limit
         self._domain_semaphores: Dict[str, asyncio.Semaphore] = {}
         self._playwright_available = None
+        self._playwright_lock = asyncio.Lock()
         self._session = None  # AsyncSession 复用连接池
+        # Playwright 浏览器并发限制：每个 Chromium 实例吃 100~500MB，必须严格限流
+        self._pw_semaphore = asyncio.Semaphore(2)
 
     def _get_session(self):
         """懒初始化 AsyncSession，复用连接池"""
@@ -47,18 +50,20 @@ class Prober:
         return self._session
 
     async def _get_playwright(self):
-        """懒检测 Playwright 是否可用"""
+        """懒检测 Playwright 是否可用，仅第一次启动浏览器测试"""
         if self._playwright_available is None:
-            try:
-                from playwright.async_api import async_playwright
-                async with async_playwright() as p:
-                    browser = await p.chromium.launch(headless=True)
-                    await browser.close()
-                self._playwright_available = True
-            except ImportError:
-                self._playwright_available = False
-            except Exception:
-                self._playwright_available = False
+            async with self._playwright_lock:
+                if self._playwright_available is None:  # double-check
+                    try:
+                        from playwright.async_api import async_playwright
+                        async with async_playwright() as p:
+                            browser = await p.chromium.launch(headless=True)
+                            await browser.close()
+                        self._playwright_available = True
+                    except ImportError:
+                        self._playwright_available = False
+                    except Exception:
+                        self._playwright_available = False
         return self._playwright_available
 
     async def probe(self, url: str) -> ProbeResult:
@@ -147,45 +152,46 @@ class Prober:
 
     async def _render_spa(self, url: str) -> Optional[str]:
         """用 Playwright 渲染 SPA 页面，返回渲染后的 HTML"""
-        try:
-            pw = await self._get_playwright()
-            if not pw:
+        async with self._pw_semaphore:  # 限制同时运行的浏览器数量（每个吃 100~500MB）
+            try:
+                pw = await self._get_playwright()
+                if not pw:
+                    return None
+
+                from playwright.async_api import async_playwright
+
+                async with async_playwright() as p:
+                    browser = await p.chromium.launch(
+                        headless=True,
+                        args=[
+                            "--no-sandbox",
+                            "--disable-blink-features=AutomationControlled",
+                            "--disable-dev-shm-usage",
+                        ],
+                    )
+                    context = await browser.new_context(
+                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+                        viewport={"width": 1920, "height": 1080},
+                        locale="zh-CN",
+                    )
+                    page = await context.new_page()
+
+                    await page.add_init_script("""
+                        Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                        window.chrome = { runtime: {} };
+                        Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                        Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
+                    """)
+
+                    await page.goto(url, wait_until="domcontentloaded", timeout=15000)
+                    await page.wait_for_timeout(3000)
+
+                    html = await page.content()
+                    await browser.close()
+                    return html
+
+            except Exception:
                 return None
-
-            from playwright.async_api import async_playwright
-
-            async with async_playwright() as p:
-                browser = await p.chromium.launch(
-                    headless=True,
-                    args=[
-                        "--no-sandbox",
-                        "--disable-blink-features=AutomationControlled",
-                        "--disable-dev-shm-usage",
-                    ],
-                )
-                context = await browser.new_context(
-                    user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
-                    viewport={"width": 1920, "height": 1080},
-                    locale="zh-CN",
-                )
-                page = await context.new_page()
-
-                await page.add_init_script("""
-                    Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-                    window.chrome = { runtime: {} };
-                    Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
-                    Object.defineProperty(navigator, 'languages', { get: () => ['zh-CN', 'zh', 'en'] });
-                """)
-
-                await page.goto(url, wait_until="domcontentloaded", timeout=15000)
-                await page.wait_for_timeout(3000)
-
-                html = await page.content()
-                await browser.close()
-                return html
-
-        except Exception:
-            return None
 
     def _detect_spa(self, html: str) -> bool:
         """检测是否为 SPA 或 JS 重定向页"""
