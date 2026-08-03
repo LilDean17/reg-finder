@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """HTTP 探测模块：对 URL 发请求，提取页面特征。支持 SPA 渲染。使用 curl_cffi 模拟 Chrome TLS 指纹。"""
+import hashlib
 import re
 import asyncio
 import warnings
@@ -24,6 +25,7 @@ class ProbeResult:
     is_spa: bool = False
     rendered: bool = False
     error: str = ""
+    content_hash: str = ""
 
 
 class Prober:
@@ -148,6 +150,10 @@ class Prober:
             err = str(e)[:100]
             if "timeout" in err.lower():
                 return ProbeResult(url=url, final_url=url, status_code=0, error="timeout")
+            # SSL 域名不匹配 → 降级为 HTTP 重试
+            if "no alternative certificate subject name matches target hostname" in err:
+                if url.startswith("https://"):
+                    return await self._do_probe("http://" + url[8:])
             return ProbeResult(url=url, final_url=url, status_code=0, error=err)
 
     async def _render_spa(self, url: str) -> Optional[str]:
@@ -253,7 +259,25 @@ class Prober:
             title=title, body_text=body_text, body_lower=body_lower,
             forms_detected=forms_detected, has_register_form=has_register_form,
             is_spa=is_spa, rendered=rendered,
+            content_hash=self._compute_content_hash(html),
         )
+
+    def _compute_content_hash(self, html: str) -> str:
+        """从原始 HTML 响应体计算去重哈希"""
+        # 去掉 script / style / noscript（动态噪声源）
+        clean = re.sub(
+            r'<(script|style|noscript)[^>]*>.*?</\1>',
+            '', html, flags=re.DOTALL | re.IGNORECASE
+        )
+        # 去掉所有 HTML 标签
+        text = re.sub(r'<[^>]+>', ' ', clean)
+        # 归一化空白
+        text = ' '.join(text.split())
+        # 去掉常见噪声（时间戳、浏览次数等）
+        text = re.sub(r'\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}', '', text)
+        text = re.sub(r'浏览次数[：:]\s*\d+', '', text)
+        text = re.sub(r'阅读次数[：:]\s*\d+', '', text)
+        return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
     def _extract_forms(self, soup) -> List[dict]:
         forms = []

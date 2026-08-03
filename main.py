@@ -135,6 +135,7 @@ class Scanner:
         processed = 0
         total = len(urls)
         content_blacklist = self.config.blacklist.content_blacklist
+        seen_hashes: set = set()
 
         high_value_count = 0
         above_threshold_count = 0
@@ -151,9 +152,20 @@ class Scanner:
             async with semaphore:  # 限制同时运行的任务数
                 nonlocal processed, content_blocked_count, error_count
                 nonlocal high_value_count, above_threshold_count, score_sum, score_count
+                nonlocal seen_hashes
 
                 # 探测
                 probe_result = await self.prober.probe(url)
+
+            # 内容去重 — 相同内容只保留第一个
+            if probe_result.content_hash:
+                if probe_result.content_hash in seen_hashes:
+                    async with lock:
+                        processed += 1
+                        pct = processed * 100 // total
+                    self._p(f"  [{processed}/{total}]({pct}%) {url}  →  {Fore.CYAN}内容重复({probe_result.content_hash[:8]}...){Style.RESET_ALL}")
+                    return None
+                seen_hashes.add(probe_result.content_hash)
 
             # 内容黑名单检查 — 命中也输出记录，并显示命中的关键字
             if content_blacklist and probe_result.status_code > 0:
