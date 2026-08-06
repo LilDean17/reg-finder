@@ -23,7 +23,7 @@
         - 单点登入
 
     - type: title_keyword
-      weight: -10
+      weight: -40
       indicators:
         - 统一登录
         - 单点登录

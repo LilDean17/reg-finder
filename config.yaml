@@ -87,6 +87,7 @@ output:
     - terminal
     - json
     - csv
+    - xlsx
 
 # HTTP 探测配置
 probe:

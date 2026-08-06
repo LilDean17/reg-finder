@@ -7,7 +7,6 @@
     - type: body_keyword
       weight: 12
       indicators:
-        - register
         - signup
         - sign up
         - create account
@@ -16,19 +15,32 @@
         - sign in
         - forgot password
         - reset password
-        - 平台
-        - 注册
+        - username
+        - password
+        - 用户名
+        - 密码
         - 登录
         - 找回密码
         - 忘记密码
         # SPA 渲染后中文可能被插入字间距，补充带空格变体
         - 登 录
-        - 注 册
         - 找回 密码
         - 忘记 密码
         - 登陆
         - 登 陆
-
+    
+    - type: body_keyword
+      weight: 5
+      indicators:
+        - 平台
+        
+    - type: body_keyword
+      weight: 20
+      indicators:
+        - register
+        - 注 册
+        - 注册
+    
     - type: body_keyword
       weight: -10
       indicators:
@@ -57,8 +69,11 @@
         - sign up
 
     - type: register_form
-      weight: 15
+      weight: 5
       input_types:
-        - email
+        - username
+        - uname
+        - userpass
+        - 用户名
+        - 密码
         - password
-        - text

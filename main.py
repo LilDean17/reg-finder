@@ -18,7 +18,18 @@ colorama.init()
 from core.config import Config
 from core.probe import Prober, ProbeResult
 from core.score import Scorer, ScoredResult
-from core.output import OutputFormatter
+from core.output import OutputFormatter, HAS_OPENPYXL
+
+_RT_SHORT = {
+    "body_keyword": "body",
+    "register_form": "form",
+    "profile_base": "base",
+    "path_keyword": "path",
+    "title_keyword": "title",
+    "domain_keyword": "domain",
+    "status_code": "status",
+    "spa_rendered": "spa",
+}
 
 
 class RequestCache:
@@ -45,6 +56,10 @@ class Scanner:
         self.scorer = Scorer(config.profiles, config.exclusions, config.scoring)
         self.formatter = OutputFormatter(config.output)
         self.cache = RequestCache()
+
+        # 高分结果实时 XLSX（扫描过程中逐条追加）
+        self._xlsx_wb = None
+        self._xlsx_path = Path("output/high_score_above5.xlsx")
 
         # 日志文件：实时写入，可通过 tail -f 查看
         self._log = None
@@ -88,6 +103,11 @@ class Scanner:
         # 初始化增量输出文件（在扫描前打开，以便写入黑名单条目）
         self._init_incremental_output()
 
+        # 初始化实时高分 XLSX（openpyxl 流式追加）
+        if HAS_OPENPYXL and "xlsx" in self.config.output.formats:
+            self._xlsx_wb = self.formatter.create_streaming_xlsx(self._xlsx_path)
+            self._p(f"[*] 实时高分 XLSX: {self._xlsx_path}（score>5 逐条追加）")
+
         # 将 URL 黑名单条目写入输出文件，并逐条终端输出
         if blocked:
             self._p(f"[*] URL 黑名单过滤: {len(blocked)} 个 URL 被跳过")
@@ -120,6 +140,14 @@ class Scanner:
         total_blocked = len(blocked) + content_blocked
         if total_blocked > 0:
             self._p(f"\n[*] 黑名单共过滤: URL层 {len(blocked)} + 内容层 {content_blocked} = {total_blocked} 个")
+
+        # 最终写入全量 XLSX（高分文件已实时追加，此处只需补写全量）
+        if HAS_OPENPYXL and "xlsx" in self.config.output.formats:
+            self.formatter.save_all_xlsx(results)
+
+        # 注册信号结果：score<5 但命中注册相关规则，单独导出
+        if HAS_OPENPYXL and "xlsx" in self.config.output.formats:
+            self.formatter.save_register_signal_xlsx(results)
 
         self._log.close()
         return results
@@ -239,6 +267,13 @@ class Scanner:
                 results.append(scored)
                 self._print_result_line(scored, processed, total)
 
+                # 实时追加高分 XLSX（score > 5，毫秒级写入，用户可实时打开查看）
+                if self._xlsx_wb and scored.score > 5:
+                    self.formatter.append_streaming_row(self._xlsx_wb, scored)
+                    self._p(
+                        f"  {Fore.MAGENTA}[实时XLSX] +1 → {scored.final_url}  score={scored.score}{Style.RESET_ALL}"
+                    )
+
                 # 增量写入 CSV
                 self._write_csv_row(scored)
                 self._csv_file.flush()
@@ -301,7 +336,7 @@ class Scanner:
             if d.weight != 0:
                 w = f"+{d.weight}" if d.weight > 0 else f"{d.weight}"
                 short = self._short_profile(d.profile)
-                items.append(f"{w}[{short}]{d.indicator}")
+                items.append(f"{w}[{short}][{_RT_SHORT.get(d.rule_type, d.rule_type)}] {d.indicator}")
 
         if items:
             indent = "                         "
@@ -310,7 +345,7 @@ class Scanner:
 
     def _write_csv_row(self, scored: ScoredResult):
         breakdown_str = "; ".join(
-            f"{'+' if d.weight > 0 else ''}{d.weight} [{d.profile}] {d.indicator}"
+            f"{'+' if d.weight > 0 else ''}{d.weight} [{d.profile}][{d.rule_type[:2]}] {d.indicator}"
             for d in scored.breakdown
         )
         self._csv_writer.writerow([

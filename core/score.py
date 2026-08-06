@@ -150,21 +150,27 @@ class Scorer:
                     hits.append(ind)
 
         elif check_type == "register_form":
-            if probe_result.has_register_form:
-                # 返回命中的 input type 作为 indicator
-                if check.input_types:
-                    # 检查哪些 input type 确实存在
-                    found_types = set()
-                    for form in probe_result.forms_detected:
-                        for t in form["input_types"]:
-                            if t in [it.lower() for it in check.input_types]:
-                                found_types.add(t)
-                    if found_types:
-                        hits.append(f"表单含: {', '.join(sorted(found_types))}")
-                    else:
-                        hits.append("注册表单")
-                else:
-                    hits.append("注册表单")
+            # 将 type/name/id/value/action 全部平铺到一个池中，统一子串匹配
+            pool: List[str] = []
+            for form in probe_result.forms_detected:
+                pool.extend(form.get("input_types", []))
+                pool.extend(form.get("input_names", []))
+                pool.extend(form.get("input_ids", []))
+                pool.extend(form.get("input_values", []))
+                pool.extend(form.get("form_actions", []))
+
+            matched = set()
+            config_lower = [it.lower() for it in check.input_types]
+            for item in pool:
+                item_lower = item.lower()
+                for ct in config_lower:
+                    if ct and ct in item_lower:
+                        matched.add(ct)
+
+            if matched:
+                for m in sorted(matched):
+                    hits.append(m)
+            # 无匹配则不产生 hit，不参与评分
 
         return hits
 

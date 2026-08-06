@@ -5,7 +5,7 @@
   category: 电商站
   checks:
     - type: body_keyword
-      weight: 15
+      weight: 12
       category: ecommerce
       indicators:
         - 购物车
@@ -21,7 +21,6 @@
         - checkout
         - shipping
         - billing
-        - product
         - wishlist
         - 加入购物车
 

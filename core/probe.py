@@ -280,30 +280,28 @@ class Prober:
         return hashlib.sha256(text.encode('utf-8')).hexdigest()[:16]
 
     def _extract_forms(self, soup) -> List[dict]:
-        forms = []
-        for form in soup.find_all("form"):
-            inputs = form.find_all("input")
-            input_types = [i.get("type", "text").lower() for i in inputs]
-            input_names = [i.get("name", "").lower() for i in inputs]
-            action = form.get("action", "").lower()
-            form_text = form.get_text(separator=" ", strip=True).lower()
-            forms.append({
-                "input_types": input_types, "input_names": input_names,
-                "action": action, "text": form_text,
-            })
-        return forms
+        """提取页面所有 input 的属性（type/name/id/value），以及父 form 的 action"""
+        inputs = soup.find_all("input")
+        if not inputs:
+            return []
+
+        input_types = [i.get("type", "text").lower() for i in inputs]
+        input_names = [i.get("name", "").lower() for i in inputs]
+        input_ids = [i.get("id", "").lower() for i in inputs]
+        input_values = [i.get("value", "").lower() for i in inputs]
+
+        # 提取所有 <form> 的 action 属性
+        form_actions = [f.get("action", "").lower() for f in soup.find_all("form")]
+
+        return [{
+            "input_types": input_types,
+            "input_names": input_names,
+            "input_ids": input_ids,
+            "input_values": input_values,
+            "form_actions": form_actions,
+        }]
 
     def _has_register_form(self, forms: List[dict], body_lower: str) -> bool:
-        for form in forms:
-            has_email = any(t == "email" or "email" in n for t, n in zip(form["input_types"], form["input_names"]))
-            has_password = "password" in form["input_types"]
-            if has_email and has_password:
-                return True
-            register_words = ["register", "signup", "sign-up", "create account", "注册"]
-            if any(w in form["text"] or w in form["action"] for w in register_words):
-                return True
-        if any("password" in f["input_types"] for f in forms):
-            register_words = ["register", "signup", "sign up", "create account", "注册账号", "新用户"]
-            if any(w in body_lower for w in register_words):
-                return True
-        return False
+        """不再做硬编码判断，始终返回 True
+        评分完全由 score.py 中 profile 配置的 input_types 驱动"""
+        return True
