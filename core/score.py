@@ -114,7 +114,7 @@ class Scorer:
             total_score += 5
 
         result.business_types = biz_types
-        result.score = max(total_score, 0)
+        result.score = total_score  # 允许为负（排除扣分超过得分时），保证三档分段无缝隙
 
         # 标记推荐等级
         if result.score >= 80:

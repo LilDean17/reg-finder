@@ -57,9 +57,13 @@ class Scanner:
         self.formatter = OutputFormatter(config.output)
         self.cache = RequestCache()
 
-        # 高分结果实时 XLSX（扫描过程中逐条追加）
-        self._xlsx_wb = None
-        self._xlsx_path = Path("output/high_score_above5.xlsx")
+        # 三档分段流式 XLSX：score>5 / 0~score≤5 / score<0，无缝隙全覆盖所有保存条目
+        self._xlsx_wbs: dict = {}
+        self._xlsx_tiers = [
+            ("high", Path("output/high_score_above5.xlsx"), "得分>5"),
+            ("mid",  Path("output/score_0_to_5.xlsx"),      "得分0~5"),
+            ("low",  Path("output/score_below_0.xlsx"),     "得分<0"),
+        ]
 
         # 日志文件：实时写入，可通过 tail -f 查看
         self._log = None
@@ -77,6 +81,19 @@ class Scanner:
                 self._log.flush()
             except Exception:
                 pass
+
+    def _append_tiered(self, scored) -> None:
+        """仅评分结果按分数追加到对应分段 XLSX（>5 / 0~5 / <0，含两端、无缝隙）
+        黑名单 / 内容重复 / CDN / 请求失败等非评分记录不写入这三个文件"""
+        if scored.score > 5:
+            key = "high"
+        elif scored.score >= 0:
+            key = "mid"
+        else:
+            key = "low"
+        wb = self._xlsx_wbs.get(key)
+        if wb is not None:
+            self.formatter.append_streaming_row(wb, scored)
 
     def run(self, urls_file: str) -> list:
         """同步入口"""
@@ -103,10 +120,11 @@ class Scanner:
         # 初始化增量输出文件（在扫描前打开，以便写入黑名单条目）
         self._init_incremental_output()
 
-        # 初始化实时高分 XLSX（openpyxl 流式追加）
+        # 初始化三档分段流式 XLSX（openpyxl 逐条追加）：>5 / 0~5 / <0
         if HAS_OPENPYXL and "xlsx" in self.config.output.formats:
-            self._xlsx_wb = self.formatter.create_streaming_xlsx(self._xlsx_path)
-            self._p(f"[*] 实时高分 XLSX: {self._xlsx_path}（score>5 逐条追加）")
+            for key, path, title in self._xlsx_tiers:
+                self._xlsx_wbs[key] = self.formatter.create_streaming_xlsx(path, title)
+            self._p("[*] 实时分段 XLSX: score>5 / score 0~5 / score<0 → 三个文件边扫边写（仅评分结果，三档无缝隙）")
 
         # 将 URL 黑名单条目写入输出文件，并逐条终端输出
         if blocked:
@@ -141,13 +159,9 @@ class Scanner:
         if total_blocked > 0:
             self._p(f"\n[*] 黑名单共过滤: URL层 {len(blocked)} + 内容层 {content_blocked} = {total_blocked} 个")
 
-        # 最终写入全量 XLSX（高分文件已实时追加，此处只需补写全量）
+        # 最终写入全量 XLSX（三档分段文件已实时追加，仅含评分结果，此处只需补写全量）
         if HAS_OPENPYXL and "xlsx" in self.config.output.formats:
             self.formatter.save_all_xlsx(results)
-
-        # 注册信号结果：score<5 但命中注册相关规则，单独导出
-        if HAS_OPENPYXL and "xlsx" in self.config.output.formats:
-            self.formatter.save_register_signal_xlsx(results)
 
         self._log.close()
         return results
@@ -267,9 +281,9 @@ class Scanner:
                 results.append(scored)
                 self._print_result_line(scored, processed, total)
 
-                # 实时追加高分 XLSX（score > 5，毫秒级写入，用户可实时打开查看）
-                if self._xlsx_wb and scored.score > 5:
-                    self.formatter.append_streaming_row(self._xlsx_wb, scored)
+                # 实时追加分段 XLSX（仅评分结果，按分数归档：>5 / 0~5 / <0，毫秒级写入）
+                self._append_tiered(scored)
+                if scored.score > 5:
                     self._p(
                         f"  {Fore.MAGENTA}[实时XLSX] +1 → {scored.final_url}  score={scored.score}{Style.RESET_ALL}"
                     )

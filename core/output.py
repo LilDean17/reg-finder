@@ -147,7 +147,7 @@ class OutputFormatter:
         print(f"[*] CSV 已保存: {path}")
 
     def _save_xlsx(self, results: list):
-        """保存全部结果到 XLSX，同时导出 score > 5 的高分结果到单独文件"""
+        """保存全部结果到 XLSX，同时按分数三档分段导出（>5 / 0~5 / <0，无缝隙全覆盖）"""
         if not HAS_OPENPYXL:
             print("\n[!] 未安装 openpyxl，跳过 XLSX 输出（pip install openpyxl）")
             return
@@ -157,14 +157,17 @@ class OutputFormatter:
         self._write_xlsx(all_path, results)
         print(f"\n[*] XLSX 已保存: {all_path}")
 
-        # 高分筛选（score > 5）
-        high = [r for r in results if r.score > 5]
-        if high:
-            high_path = Path("output/high_score_above5.xlsx")
-            self._write_xlsx(high_path, high)
-            print(f"[*] 高分结果 (score>5) XLSX 已保存: {high_path}  ({len(high)} 条)")
-        else:
-            print(f"\n[*] 无 score > 5 的结果，未生成高分 XLSX")
+        # 三档分段：score>5 / 0<=score<=5 / score<0
+        tiers = [
+            ("output/high_score_above5.xlsx", "得分>5", [r for r in results if r.score > 5]),
+            ("output/score_0_to_5.xlsx", "得分0~5", [r for r in results if 0 <= r.score <= 5]),
+            ("output/score_below_0.xlsx", "得分<0", [r for r in results if r.score < 0]),
+        ]
+        for filename, label, rows in tiers:
+            if rows:
+                path = Path(filename)
+                self._write_xlsx(path, rows)
+                print(f"[*] {label} XLSX 已保存: {path}  ({len(rows)} 条)")
 
     def save_all_xlsx(self, results: list):
         """仅保存全部结果的 XLSX（高分文件由流式追加单独处理）"""
@@ -174,57 +177,13 @@ class OutputFormatter:
         self._write_xlsx(all_path, results)
         print(f"\n[*] XLSX 已保存: {all_path}")
 
-    @staticmethod
-    def _has_register_signal(result) -> bool:
-        """判断结果是否命中注册信号：score < 5 且命中规则明细中包含注册/register相关字眼"""
-        if result.score >= 5:
-            return False
-
-        # 注册相关关键词（含变体：去空格、去分隔符）
-        keywords = [
-            # 中文
-            "注册", "注 册", "注-册", "注.册", "註冊",
-            "报 名", "报-名", "登 记", "登-记",
-            "开 户", "开-户", "申 请", "申-请",
-            "马上注册", "立即注册", "免费注册",
-            # 英文
-            "register", "regist", "sign up", "signup", "sign-up",
-            "create account", "new user", "join us",
-            "become a member", "subscribe",
-        ]
-
-        for d in result.breakdown:
-            indicator_lower = d.indicator.lower()
-            if any(kw.lower() in indicator_lower for kw in keywords):
-                return True
-
-        # 也检查表单检测标志
-        if result.has_register_form:
-            return True
-        return False
-
-    def save_register_signal_xlsx(self, results: list):
-        """将 score<5 但命中注册信号的结果单独导出到 XLSX"""
-        if not HAS_OPENPYXL:
-            print("\n[!] 未安装 openpyxl，跳过注册信号 XLSX 输出")
-            return
-
-        filtered = [r for r in results if self._has_register_signal(r)]
-        if not filtered:
-            print(f"\n[*] 无 score<5 且命中注册信号的结果，未生成注册信号 XLSX")
-            return
-
-        path = Path("output/register_signal_low_score.xlsx")
-        self._write_xlsx(path, filtered)
-        print(f"[*] 注册信号结果 (score<5+注册命中) XLSX 已保存: {path}  ({len(filtered)} 条)")
-
     # ── 实时流式 XLSX（扫描过程中逐条追加） ──────────────────────────
 
-    def create_streaming_xlsx(self, path: Path) -> "Workbook":
+    def create_streaming_xlsx(self, path: Path, sheet_title: str = "扫描结果") -> "Workbook":
         """创建一个带表头的工作簿，供扫描过程中逐条追加使用"""
         wb = Workbook()
         ws = wb.active
-        ws.title = "高分红分"
+        ws.title = sheet_title
 
         header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
         header_font = Font(bold=True, color="FFFFFF", size=11)

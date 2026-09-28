@@ -19,7 +19,14 @@
 | `results.csv` | CSV | 实时增量写入，可直接打开查看 |
 | `results.jsonl` | JSONL | 每行一条记录，适合程序二次处理 |
 | `scan.log` | 文本 | 终端输出副本，支持实时追踪 |
+| `results.xlsx` | Excel | 全部评分结果 |
+| `high_score_above5.xlsx` | Excel | score > 5 的条目，扫描中实时追加 |
+| `score_0_to_5.xlsx` | Excel | 0 ≤ score ≤ 5 的条目，扫描中实时追加 |
+| `score_below_0.xlsx` | Excel | score < 0 的条目（排除扣分），扫描中实时追加 |
 | `results_filtered.xlsx` | Excel | 通过 `format_excel.py` 格式化输出 |
+
+> 三个分段文件严格按分数归档、无任何附加条件，加起来恰好覆盖全部**已评分**条目（无缝隙）。
+> 黑名单 / 内容重复 / CDN / 请求失败等非评分记录**不会**进入这三个文件（仅记录在 CSV / JSONL 中）。
 
 ## 评分机制
 
